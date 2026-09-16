@@ -1,0 +1,28 @@
+# Entorno virtual
+venvVioTun/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# Variables de entorno / secretos
+.env
+
+# Archivos de sistema operativo
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+
+# Datasets de audio crudos (pueden pesar mucho, no hace falta versionarlos)
+data/*.wav
+data/*.mp3
+data/raw/
+
+# Logs
+*.log

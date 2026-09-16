@@ -1,0 +1,3 @@
+0 Background Noise
+1 BienAfinada
+2 MalAfinada
