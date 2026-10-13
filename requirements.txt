@@ -1,8 +1,0 @@
-aubio
-librosa
-numpy
-opencv-python
-scipy
-soundfile
-tensorflow
-pyaudio
