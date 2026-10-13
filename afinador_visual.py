@@ -8,10 +8,19 @@ import tensorflow as tf
 # ---------- Configuracion ----------
 SAMPLE_RATE = 44100
 CHUNK = 44032
-REFERENCIA_HZ = 440.0  # cuerda La
 
-MODEL_PATH = "Models/soundclassifier_with_metadata.tflite"
-LABELS_PATH = "Models/labels.txt"
+MODEL_PATH = "Model2/soundclassifier_with_metadata.tflite"
+LABELS_PATH = "Model2/labels.txt"
+
+# --- Referencias de las 4 cuerdas del violin ---
+REFERENCIAS = {
+    "Sol": 196.00,
+    "Re": 293.66,
+    "La": 440.00,
+    "Mi": 659.25,
+}
+
+UMBRAL_PRECISION_AFINADO = 70  # equivale a 15 cents o menos de diferencia
 
 # ---------- Cargar modelo ----------
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
@@ -26,9 +35,10 @@ with open(LABELS_PATH, "r") as f:
 estado_lock = threading.Lock()
 estado = {
     "clase": "Esperando...",
-    "confianza": 0.0,
+    "cuerda": None,
     "frecuencia": None,
     "cents": None,
+    "precision": None,
 }
 detener = threading.Event()
 
@@ -47,14 +57,64 @@ def calcular_frecuencia(audio_buffer):
     return None
 
 
+def encontrar_cuerda_mas_cercana(freq_detectada):
+    """Encuentra la cuerda cuya frecuencia esta mas cerca en escala de cents (no en Hz)."""
+    mejor_cuerda = None
+    menor_diferencia_cents = float("inf")
+    for cuerda, freq_ref in REFERENCIAS.items():
+        diferencia = abs(1200 * np.log2(freq_detectada / freq_ref))
+        if diferencia < menor_diferencia_cents:
+            menor_diferencia_cents = diferencia
+            mejor_cuerda = cuerda
+    return mejor_cuerda, REFERENCIAS[mejor_cuerda], menor_diferencia_cents
+
+
+def corregir_error_de_octava(freq_detectada):
+    """librosa.pyin a veces detecta el doble o la mitad de la frecuencia real
+    (error de octava/subarmonico), mas comun en transiciones entre notas.
+    Como solo hay 4 frecuencias validas (las cuerdas del violin), probamos
+    freq, freq*2 y freq/2 contra las referencias y nos quedamos con la que
+    mas se acerque a una cuerda conocida."""
+    candidatos = [freq_detectada, freq_detectada * 2, freq_detectada / 2]
+    mejor_freq = freq_detectada
+    menor_diferencia = float("inf")
+    for candidato in candidatos:
+        _, _, diferencia = encontrar_cuerda_mas_cercana(candidato)
+        if diferencia < menor_diferencia:
+            menor_diferencia = diferencia
+            mejor_freq = candidato
+    return mejor_freq
+
+
 def calcular_cents(freq_detectada, freq_referencia):
     if freq_detectada is None or freq_detectada <= 0:
         return None
     return 1200 * np.log2(freq_detectada / freq_referencia)
 
 
+def calcular_precision(cents):
+    """Convierte la desviacion en cents a un porcentaje de precision.
+    100% = perfectamente afinado (0 cents), 0% = 50+ cents de diferencia."""
+    if cents is None:
+        return None
+    abs_cents = min(abs(cents), 50)
+    return max(0, 100 - abs_cents * 2)
+
+
+def corregir_clasificacion(clase_tm, precision):
+    """Corrige la clasificacion de Teachable Machine usando la precision de librosa.
+    Si la precision (medicion exacta) es alta, se considera afinado sin importar
+    lo que haya dicho el clasificador entrenado."""
+    if precision is None:
+        return clase_tm
+    if precision >= UMBRAL_PRECISION_AFINADO:
+        return "Afinada"
+    else:
+        return "Desafinada"
+
+
 def hilo_audio():
-    """Corre en paralelo: escucha el microfono, clasifica y calcula cents."""
+    """Corre en paralelo: escucha el microfono, clasifica y corrige con precision."""
     p = pyaudio.PyAudio()
     try:
         stream = p.open(format=pyaudio.paFloat32,
@@ -72,28 +132,36 @@ def hilo_audio():
             raw = stream.read(CHUNK, exception_on_overflow=False)
             audio = np.frombuffer(raw, dtype=np.float32)
 
-            # --- Clasificacion con Teachable Machine ---
+            # --- Clasificacion inicial con Teachable Machine ---
             audio_input = audio.reshape(1, CHUNK).astype(np.float32)
             interpreter.set_tensor(input_details[0]['index'], audio_input)
             interpreter.invoke()
             output = interpreter.get_tensor(output_details[0]['index'])[0]
 
             idx = np.argmax(output)
-            clase = labels[idx]
-            confianza = output[idx] * 100
+            clase_tm = labels[idx]
 
-            # --- Calculo de cents (solo si hay nota sonando) ---
+            cuerda = None
             freq = None
             cents = None
-            if clase != "Background Noise":
+            precision = None
+            clase_final = clase_tm
+
+            if clase_tm != "Background Noise":
                 freq = calcular_frecuencia(audio)
-                cents = calcular_cents(freq, REFERENCIA_HZ)
+                if freq is not None:
+                    freq = corregir_error_de_octava(freq)
+                    cuerda, referencia, _ = encontrar_cuerda_mas_cercana(freq)
+                    cents = calcular_cents(freq, referencia)
+                    precision = calcular_precision(cents)
+                    clase_final = corregir_clasificacion(clase_tm, precision)
 
             with estado_lock:
-                estado["clase"] = clase
-                estado["confianza"] = confianza
+                estado["clase"] = clase_final
+                estado["cuerda"] = cuerda
                 estado["frecuencia"] = freq
                 estado["cents"] = cents
+                estado["precision"] = precision
 
         except Exception as e:
             print(f"ADVERTENCIA en hilo de audio: {e}")
@@ -104,20 +172,18 @@ def hilo_audio():
     p.terminate()
 
 
-# ---------- Color segun clase y cents ----------
-def color_por_clase_y_cents(clase, cents):
-    if clase == "Background Noise" or cents is None:
+# ---------- Color segun clase y precision ----------
+def color_por_clase_y_precision(clase, precision):
+    if clase == "Background Noise" or precision is None:
         return (200, 200, 200)  # gris: sin nota sonando
 
-    abs_c = min(abs(cents), 50)
-
-    if clase == "BienAfinada":
-        # Tonos de verde (BGR): mas brillante cuanto mas cerca de 0 cents
-        intensidad = int(255 - (abs_c / 50) * 155)
+    if clase == "Afinada":
+        # Tonos de verde (BGR): mas brillante cuanto mayor la precision
+        intensidad = int(100 + (precision / 100) * 155)
         return (0, intensidad, 0)
     else:
-        # MalAfinada -> tonos de rojo (BGR): mas intenso cuanto mas lejos de 0 cents
-        intensidad_roja = int(100 + (abs_c / 50) * 155)
+        # Desafinada -> tonos de rojo (BGR): mas intenso cuanto menor la precision
+        intensidad_roja = int(100 + (100 - precision) / 100 * 155)
         return (0, 0, intensidad_roja)
 
 
@@ -143,23 +209,27 @@ def main():
 
             with estado_lock:
                 clase = estado["clase"]
-                confianza = estado["confianza"]
+                cuerda = estado["cuerda"]
                 freq = estado["frecuencia"]
                 cents = estado["cents"]
+                precision = estado["precision"]
 
-            color = color_por_clase_y_cents(clase, cents)
+            color = color_por_clase_y_precision(clase, precision)
 
             cv2.rectangle(frame, (30, frame.shape[0] - 80),
                           (frame.shape[1] - 30, frame.shape[0] - 30), color, -1)
 
-            texto_clase = f"{clase} ({confianza:.0f}%)"
+            if cuerda is not None:
+                texto_clase = f"{clase} - Cuerda {cuerda}"
+            else:
+                texto_clase = clase
             cv2.putText(frame, texto_clase, (30, 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
 
-            if freq is not None and cents is not None:
-                texto_info = f"{freq:.1f} Hz | {cents:+.1f} cents"
+            if freq is not None and cents is not None and precision is not None:
+                texto_info = f"{freq:.1f} Hz | {cents:+.1f} cents | Precision: {precision:.0f}%"
                 cv2.putText(frame, texto_info, (30, frame.shape[0] - 45),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
 
             cv2.imshow("Afinador de Violin", frame)
 
