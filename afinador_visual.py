@@ -1,9 +1,9 @@
-import threading
-import cv2
-import numpy as np
-import pyaudio
-import librosa
-import tensorflow as tf
+import threading # Hilos
+import cv2 # Abrir la camara
+import numpy as np # Calcular la media de la frecuencia
+import pyaudio # Captura el audio en vivo
+import librosa # Estima el tono de cada sonido
+import tensorflow as tf # Carga y corre en modelo
 
 # ---------- Configuracion ----------
 SAMPLE_RATE = 44100

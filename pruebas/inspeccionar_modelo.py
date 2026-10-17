@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-interpreter = tf.lite.Interpreter(model_path="Model2/soundclassifier_with_metadata.tflite")
+interpreter = tf.lite.Interpreter(model_path="../Model2/soundclassifier_with_metadata.tflite")
 interpreter.allocate_tensors()
 
 input_details = interpreter.get_input_details()
