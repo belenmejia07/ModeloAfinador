@@ -4,13 +4,18 @@ import numpy as np # Calcular la media de la frecuencia
 import pyaudio # Captura el audio en vivo
 import librosa # Estima el tono de cada sonido
 import tensorflow as tf # Carga y corre en modelo
+from pathlib import Path
 
 # ---------- Configuracion ----------
 SAMPLE_RATE = 44100
 CHUNK = 44032
 
-MODEL_PATH = "Model2/soundclassifier_with_metadata.tflite"
-LABELS_PATH = "Model2/labels.txt"
+BASE = Path(__file__).resolve().parent
+MODEL_PATH = str(BASE / "Model2" / "soundclassifier_with_metadata.tflite")
+LABELS_PATH = str(BASE / "Model2" / "labels.txt")
+
+# MODEL_PATH = "Model2/soundclassifier_with_metadata.tflite"
+# LABELS_PATH = "Model2/labels.txt"
 
 # --- Referencias de las 4 cuerdas del violin ---
 REFERENCIAS = {

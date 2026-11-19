@@ -6,3 +6,5 @@ scipy
 soundfile
 tensorflow
 pyaudio
+matplotlib
+scikit-learn

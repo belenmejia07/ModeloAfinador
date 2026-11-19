@@ -26,3 +26,7 @@ data/raw/
 
 # Logs
 *.log
+
+*.wav
+fase2/datos/
+fase2/salida_modelo/
