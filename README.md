@@ -92,7 +92,7 @@ Un violín, una ejecutante, un micrófono y una sesión; sin vibrato; cents nomi
 
 ## Documentación
 
-- Artículo científico para la Revista 3i (en `docs/`).
+- Artículo científico (en `docs/`).
 - Presentación de la fase 2 (en `docs/`).
 - [`fase2/README_fase2.md`](fase2/README_fase2.md): pipeline, fórmulas, experimentos y cómo reproducirlos.
 
