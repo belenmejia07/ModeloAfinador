@@ -1,0 +1,23 @@
+{
+ "clases": [
+  "Sol3",
+  "La3",
+  "Si3",
+  "Do4",
+  "Re4",
+  "Mi4",
+  "Fa4",
+  "Sol4",
+  "La4",
+  "Si4",
+  "Do5",
+  "Re5",
+  "Mi5",
+  "ruido"
+ ],
+ "sr": 44100,
+ "ventana": 44100,
+ "f_min": 180.0,
+ "f_max": 3000.0,
+ "cents_por_bin": 25
+}
